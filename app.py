@@ -19,26 +19,33 @@ app.secret_key = secrets.token_hex(16)
 # Base directory for content
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Pre-extracted content JSON file (created by extract_content.py)
-EXTRACTED_CONTENT_FILE = os.path.join(BASE_DIR, "extracted_content", "chapters_content.json")
+# Load chapter content from JSON file
+CONTENT_JSON_FILE = os.path.join(BASE_DIR, "extracted_content", "chapters_content.json")
 
-# Load pre-extracted content if available
-EXTRACTED_CONTENT = {}
-if os.path.exists(EXTRACTED_CONTENT_FILE):
+# Load content from JSON
+CHAPTER_CONTENT = {}
+if os.path.exists(CONTENT_JSON_FILE):
     try:
-        with open(EXTRACTED_CONTENT_FILE, 'r', encoding='utf-8') as f:
-            EXTRACTED_CONTENT = json.load(f)
-        print(f"✅ Loaded pre-extracted content for {len(EXTRACTED_CONTENT)} chapters")
+        with open(CONTENT_JSON_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            # Handle both formats: direct dict or wrapped in "chapters" array
+            if isinstance(data, dict) and "chapters" in data:
+                # Convert array to dict keyed by ID
+                for chapter in data["chapters"]:
+                    CHAPTER_CONTENT[chapter["id"]] = chapter
+            elif isinstance(data, dict):
+                CHAPTER_CONTENT = data
+        print(f"✅ Loaded chapter content for {len(CHAPTER_CONTENT)} chapters")
     except Exception as e:
-        print(f"⚠️ Could not load extracted content: {e}")
+        print(f"⚠️ Could not load chapter content: {e}")
 else:
-    print("⚠️ No pre-extracted content found. Run 'python extract_content.py' locally first.")
+    print("⚠️ No chapter content file found at extracted_content/chapters_content.json")
 
 
-def get_chapter_context(chapter_id):
-    """Get chapter context from pre-extracted JSON content"""
-    if chapter_id in EXTRACTED_CONTENT:
-        content = EXTRACTED_CONTENT[chapter_id]
+def get_chapter_content(chapter_id):
+    """Get chapter content from JSON file"""
+    if chapter_id in CHAPTER_CONTENT:
+        content = CHAPTER_CONTENT[chapter_id]
         return content.get("book_content", ""), content.get("pyq_content", "")
     return "", ""
 
@@ -56,13 +63,16 @@ FIRST_FLIGHT_CHAPTERS = {
         {"id": "ff_p9", "name": "The Proposal", "type": "prose"},
     ],
     "poetry": [
-        {"id": "ff_po1", "name": "Dust of Snow & Fire and Ice", "type": "poetry"},
-        {"id": "ff_po2", "name": "A Tiger in the Zoo", "type": "poetry"},
-        {"id": "ff_po3", "name": "How to Tell Wild Animals & The Ball Poem", "type": "poetry"},
-        {"id": "ff_po4", "name": "Amanda!", "type": "poetry"},
-        {"id": "ff_po5", "name": "Animals & The Trees", "type": "poetry"},
-        {"id": "ff_po6", "name": "Fog & The Tale of Custard the Dragon", "type": "poetry"},
-        {"id": "ff_po7", "name": "For Anne Gregory", "type": "poetry"},
+        {"id": "ff_po1", "name": "Dust of Snow", "type": "poetry"},
+        {"id": "ff_po2", "name": "Fire and Ice", "type": "poetry"},
+        {"id": "ff_po3", "name": "A Tiger in the Zoo", "type": "poetry"},
+        {"id": "ff_po4", "name": "How to Tell Wild Animals", "type": "poetry"},
+        {"id": "ff_po5", "name": "The Ball Poem", "type": "poetry"},
+        {"id": "ff_po6", "name": "Amanda!", "type": "poetry"},
+        {"id": "ff_po7", "name": "The Trees", "type": "poetry"},
+        {"id": "ff_po8", "name": "Fog", "type": "poetry"},
+        {"id": "ff_po9", "name": "The Tale of Custard the Dragon", "type": "poetry"},
+        {"id": "ff_po10", "name": "For Anne Gregory", "type": "poetry"},
     ]
 }
 
@@ -114,31 +124,40 @@ def generate_quiz(chapter_id, api_key, num_questions=15):
     chapter_name = chapter["name"]
     book_name = chapter["book"]
     
-    # Extract PDF content for context
-    print(f"Extracting content for: {chapter_name}")
-    book_content, pyq_content = get_chapter_context(chapter_id)
+    # Load content from JSON
+    print(f"Loading content for: {chapter_name}")
+    book_content, pyq_content = get_chapter_content(chapter_id)
     
     # Build context section
     context_section = ""
+    has_content = False
+    
     if book_content:
-        print(f"Book content extracted: {len(book_content)} characters")
+        print(f"Book content loaded: {len(book_content)} characters")
         context_section += f"""
 === CHAPTER CONTENT FROM NCERT BOOK ===
 {book_content}
 === END OF CHAPTER CONTENT ===
 """
+        has_content = True
     else:
-        print("No book content extracted (PyMuPDF may not be installed)")
+        print("No book content available for this chapter")
     
     if pyq_content:
-        print(f"PYQ content extracted: {len(pyq_content)} characters")
+        print(f"PYQ content loaded: {len(pyq_content)} characters")
         context_section += f"""
 === PREVIOUS YEAR QUESTIONS (LITERATURE SECTION) ===
 {pyq_content}
 === END OF PYQ CONTENT ===
 """
+        has_content = True
     else:
-        print("No PYQ content extracted")
+        print("No PYQ content available for this chapter")
+    
+    # If no context available, add a note
+    if not has_content:
+        print("⚠️ Content and PYQs were NOT sent to Gemini - using general knowledge only")
+        context_section = "NOTE: I don't have chapter context available for this chapter. Generate questions based on the chapter name and standard CBSE curriculum knowledge."
     
     # Build comprehensive prompt based on chapter type
     if chapter_type == "poetry":
